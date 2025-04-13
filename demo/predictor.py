@@ -14,6 +14,7 @@ import cv2
 import torch
 import itertools
 import numpy as np
+import matplotlib.colors as mplc
 
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.engine.defaults import DefaultPredictor as d2_defaultPredictor
@@ -29,6 +30,27 @@ class DefaultPredictor(d2_defaultPredictor):
 
 
 class OpenVocabVisualizer(Visualizer):
+    def _jitter(self, color):
+        """
+        Randomly modifies given color to produce a slightly different color than the color given.
+        Ensures that the color values are strictly less than 1.0 to avoid matplotlib errors.
+
+        Args:
+            color (tuple[double]): a tuple of 3 elements, containing the RGB values of the color
+                picked. The values in the list are in the [0.0, 1.0] range.
+
+        Returns:
+            jittered_color (tuple[double]): a tuple of 3 elements, containing the RGB values of the
+                color after being jittered. The values in the list are in the [0.0, 0.9999] range.
+        """
+        color = mplc.to_rgb(color)
+        vec = np.random.rand(3)
+        # better to do it in another color space
+        vec = vec / np.linalg.norm(vec) * 0.5
+        # Clip to slightly below 1.0 to avoid matplotlib errors
+        res = np.clip(vec + color, 0, 0.9999)
+        return tuple(res)
+
     def draw_panoptic_seg(self, panoptic_seg, segments_info, area_threshold=None, alpha=0.7):
         """
         Draw panoptic prediction annotations or results.
@@ -53,7 +75,7 @@ class OpenVocabVisualizer(Visualizer):
         for mask, sinfo in pred.semantic_masks():
             category_idx = sinfo["category_id"]
             try:
-                mask_color = [x / 255 for x in self.metadata.stuff_colors[category_idx]]
+                mask_color = [min(x / 255, 0.9999) for x in self.metadata.stuff_colors[category_idx]]
             except AttributeError:
                 mask_color = None
 
@@ -85,7 +107,7 @@ class OpenVocabVisualizer(Visualizer):
 
         try:
             colors = [
-                self._jitter([x / 255 for x in self.metadata.stuff_colors[c]]) for c in category_ids
+                self._jitter([min(x / 255, 0.9999) for x in self.metadata.stuff_colors[c]]) for c in category_ids
             ]
         except AttributeError:
             colors = None
@@ -104,7 +126,7 @@ class OpenVocabVisualizer(Visualizer):
         labels = labels[sorted_idxs]
         for label in filter(lambda l: l < len(stuff_classes), labels):
             try:
-                mask_color = [x / 255 for x in self.metadata.stuff_colors[label]]
+                mask_color = [min(x / 255, 0.9999) for x in self.metadata.stuff_colors[label]]
             except (AttributeError, IndexError):
                 mask_color = None
 
