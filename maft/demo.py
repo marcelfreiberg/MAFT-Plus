@@ -464,12 +464,14 @@ class MAFT_Plus_DEMO(nn.Module):
 
                 # panoptic segmentation inference
                 if self.panoptic_on:
-                    panoptic_r = retry_if_cuda_oom(self.panoptic_inference)(mask_cls_result, mask_pred_result, meta['dataname'])
+                    # panoptic_r = retry_if_cuda_oom(self.panoptic_inference)(mask_cls_result, mask_pred_result, meta['dataname'])
+                    panoptic_r = retry_if_cuda_oom(self.panoptic_inference)(mask_cls_result, mask_pred_result)
                     processed_results[-1]["panoptic_seg"] = panoptic_r
                 
                 # instance segmentation inference
                 if self.instance_on:
-                    instance_r = retry_if_cuda_oom(self.instance_inference)(mask_cls_result, mask_pred_result, meta['dataname'])
+                    # instance_r = retry_if_cuda_oom(self.instance_inference)(mask_cls_result, mask_pred_result, meta['dataname'])
+                    instance_r = retry_if_cuda_oom(self.instance_inference)(mask_cls_result, mask_pred_result)
                     processed_results[-1]["instances"] = instance_r
 
             return processed_results
@@ -496,10 +498,10 @@ class MAFT_Plus_DEMO(nn.Module):
         semseg = torch.einsum("qc,qhw->chw", mask_cls, mask_pred)
         return semseg
 
-    def panoptic_inference(self, mask_cls, mask_pred, dataname):
+    def panoptic_inference(self, mask_cls, mask_pred):
         scores, labels = F.softmax(mask_cls, dim=-1).max(-1)
         mask_pred = mask_pred.sigmoid()
-        num_classes = len(self.test_metadata[dataname].stuff_classes)
+        num_classes = len(self.test_metadata.stuff_classes)
         keep = labels.ne(num_classes) & (scores > self.object_mask_threshold)
         cur_scores = scores[keep]
         cur_classes = labels[keep]
@@ -524,7 +526,7 @@ class MAFT_Plus_DEMO(nn.Module):
             stuff_memory_list = {}
             for k in range(cur_classes.shape[0]):
                 pred_class = cur_classes[k].item()
-                isthing = pred_class in self.test_metadata[dataname].thing_dataset_id_to_contiguous_id.values()
+                isthing = pred_class in self.test_metadata.thing_dataset_id_to_contiguous_id.values()
                 mask_area = (cur_mask_ids == k).sum().item()
                 original_area = (cur_masks[k] >= 0.5).sum().item()
                 mask = (cur_mask_ids == k) & (cur_masks[k] >= 0.5)
@@ -554,7 +556,7 @@ class MAFT_Plus_DEMO(nn.Module):
 
             return panoptic_seg, segments_info
 
-    def instance_inference(self, mask_cls, mask_pred, dataname):
+    def instance_inference(self, mask_cls, mask_pred):
         # mask_pred is already processed to have the same shape as original input
         image_size = mask_pred.shape[-2:]
 
@@ -562,9 +564,9 @@ class MAFT_Plus_DEMO(nn.Module):
         scores = F.softmax(mask_cls, dim=-1)[:, :-1]
         # if this is panoptic segmentation
         if self.panoptic_on:
-            num_classes = len(self.test_metadata[dataname].stuff_classes)
+            num_classes = len(self.test_metadata.stuff_classes)
         else:
-            num_classes = len(self.test_metadata[dataname].thing_classes)
+            num_classes = len(self.test_metadata.thing_classes)
         labels = torch.arange(num_classes, device=self.device).unsqueeze(0).repeat(self.num_queries, 1).flatten(0, 1)
         # scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.num_queries, sorted=False)
         scores_per_image, topk_indices = scores.flatten(0, 1).topk(self.test_topk_per_image, sorted=False)
@@ -578,7 +580,7 @@ class MAFT_Plus_DEMO(nn.Module):
         if self.panoptic_on:
             keep = torch.zeros_like(scores_per_image).bool()
             for i, lab in enumerate(labels_per_image):
-                keep[i] = lab in self.test_metadata[dataname].thing_dataset_id_to_contiguous_id.values()
+                keep[i] = lab in self.test_metadata.thing_dataset_id_to_contiguous_id.values()
 
             scores_per_image = scores_per_image[keep]
             labels_per_image = labels_per_image[keep]
