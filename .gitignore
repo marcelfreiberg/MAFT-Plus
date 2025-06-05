@@ -1,0 +1,15 @@
+__py
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+*.pyzw
+*.pyzwz
+
+maft/modeling/pixel_decoder/ops/MultiScaleDeformableAttention.egg-info
+maft/modeling/pixel_decoder/ops/build
+
+out

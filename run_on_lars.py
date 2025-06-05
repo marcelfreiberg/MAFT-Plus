@@ -185,7 +185,7 @@ cfg.freeze()
 
 predictor = DefaultPredictor(cfg)
 
-demo_classes, demo_metadata = build_demo_classes_and_metadata("", ["LARS_EXTENDED"]) # Class config. Options: "LARS", "LARS_EXTENDED", ""
+demo_classes, demo_metadata = build_demo_classes_and_metadata("", ["LARS"]) # Class config. Options: "LARS", "LARS_EXTENDED", ""
 predictor.set_metadata(demo_metadata)
 
 # In[9]:
