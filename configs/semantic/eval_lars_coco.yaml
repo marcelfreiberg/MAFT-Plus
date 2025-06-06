@@ -1,0 +1,25 @@
+# python train_net.py --config-file configs/semantic/eval_lars_coco.yaml --num-gpus 8 --eval-only
+
+_BASE_: ./train_semantic_large.yaml
+MODEL:
+  WEIGHTS: /data/mfreiberg/weights/maftplus/maftp_l_pano.pth
+  META_ARCHITECTURE: "MAFT_Plus"
+  SEM_SEG_HEAD:
+    NAME: "FCCLIPHead"
+    NUM_CLASSES: 11  # Lars COCO has 11 categories
+  FC_CLIP:
+    CLIP_MODEL_NAME: "convnext_large_d_320"  
+    CLIP_PRETRAINED_WEIGHTS: "laion2b_s29b_b131k_ft_soup" 
+    EMBED_DIM: 768
+    GEOMETRIC_ENSEMBLE_ALPHA: -1.
+    GEOMETRIC_ENSEMBLE_BETA: -1.
+  rc_weights: 0.1
+
+INPUT:
+  DATASET_MAPPER_NAME: "mask_former_semantic"  # This enables detailed per-class metrics
+
+DATASETS:
+  TRAIN: ("lars_coco_train_panoptic",)  # Not used for eval-only
+  TEST: ("lars_coco_val_panoptic",)     # Your lars_coco validation set
+
+OUTPUT_DIR: ./out/semantic/lars_coco_evaluation 
