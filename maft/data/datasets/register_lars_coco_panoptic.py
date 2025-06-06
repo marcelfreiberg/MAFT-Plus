@@ -38,52 +38,44 @@ _PREDEFINED_SPLITS_LARS_COCO_PANOPTIC = {
 
 def get_metadata():
     meta = {}
-    # Separate out thing / stuff names and colors
-    thing_classes = [k["name"] for k in LARS_COCO_CATEGORIES if k["isthing"] == 1]
-    thing_colors = [k["color"] for k in LARS_COCO_CATEGORIES if k["isthing"] == 1]
-    stuff_classes = [k["name"] for k in LARS_COCO_CATEGORIES if k["isthing"] == 0]
-    stuff_colors = [k["color"] for k in LARS_COCO_CATEGORIES if k["isthing"] == 0]
-
-    # Build mapping from original dataset ID → contiguous ID
+    
+    # Sort categories by original ID to ensure consistent ordering (same as preparation script)
+    sorted_categories = sorted(LARS_COCO_CATEGORIES, key=lambda x: x["id"])
+    
+    # Split thing vs. stuff classes
+    thing_classes = [k["name"] for k in sorted_categories if k["isthing"] == 1]
+    thing_colors = [k["color"] for k in sorted_categories if k["isthing"] == 1]
+    stuff_classes = [k["name"] for k in sorted_categories if k["isthing"] == 0]
+    stuff_colors = [k["color"] for k in sorted_categories if k["isthing"] == 0]
+    
+    # For semantic evaluation, we need all classes in a unified list
+    # Following COCO pattern: all classes get contiguous IDs [0, N-1]
+    all_classes = [k["name"] for k in sorted_categories]
+    all_colors = [k["color"] for k in sorted_categories]
+    
+    # Create unified contiguous ID mapping (like COCO does)
     thing_dataset_id_to_contiguous_id = {}
     stuff_dataset_id_to_contiguous_id = {}
-    contiguous_id_to_class_name = [None] * len(LARS_COCO_CATEGORIES)
-
-    # Assign thing IDs 0..7, stuff IDs 8..10
-    thing_contiguous_id = 0
-    stuff_contiguous_id = 8
-
-    for cat in LARS_COCO_CATEGORIES:
+    contiguous_id_to_class_name = []
+    
+    # Assign contiguous IDs in sorted order
+    for i, cat in enumerate(sorted_categories):
         if cat["isthing"] == 1:
-            thing_dataset_id_to_contiguous_id[cat["id"]] = thing_contiguous_id
-            contiguous_id_to_class_name[thing_contiguous_id] = cat["name"]
-            thing_contiguous_id += 1
-        else:
-            stuff_dataset_id_to_contiguous_id[cat["id"]] = stuff_contiguous_id
-            contiguous_id_to_class_name[stuff_contiguous_id] = cat["name"]
-            stuff_contiguous_id += 1
-
-    # For FCCLIP / text embeddings, we use the full contiguous_id_to_class_name
-    sem_stuff_classes = contiguous_id_to_class_name
-
+            thing_dataset_id_to_contiguous_id[cat["id"]] = i
+        # For semantic evaluation, ALL classes go in stuff_dataset_id_to_contiguous_id
+        stuff_dataset_id_to_contiguous_id[cat["id"]] = i
+        contiguous_id_to_class_name.append(cat["name"])
+    
     meta["thing_classes"] = thing_classes
     meta["thing_colors"] = thing_colors
-    # NOTE: We store ALL classes under "stuff_classes" so the model's text encoder
-    # sees the full ordered list [0..10].
-    meta["stuff_classes"] = sem_stuff_classes
-    meta["stuff_colors"] = stuff_colors
-    meta["sem_stuff_classes"] = sem_stuff_classes
+    meta["stuff_classes"] = all_classes  # All classes for semantic evaluation
+    meta["stuff_colors"] = all_colors    # All colors for semantic evaluation 
+    meta["sem_stuff_classes"] = all_classes  # For text embeddings
     meta["thing_dataset_id_to_contiguous_id"] = thing_dataset_id_to_contiguous_id
-
-    # *** FIX: For semantic evaluation, we need a complete mapping of all contiguous IDs to dataset IDs ***
-    # Include both thing and stuff classes in the stuff_dataset_id_to_contiguous_id for semantic evaluation
-    complete_dataset_id_to_contiguous_id = {}
-    complete_dataset_id_to_contiguous_id.update(thing_dataset_id_to_contiguous_id)
-    complete_dataset_id_to_contiguous_id.update(stuff_dataset_id_to_contiguous_id)
-    meta["stuff_dataset_id_to_contiguous_id"] = complete_dataset_id_to_contiguous_id
-
+    meta["stuff_dataset_id_to_contiguous_id"] = stuff_dataset_id_to_contiguous_id
     meta["contiguous_id_to_class_name"] = contiguous_id_to_class_name
     meta["dataname"] = "lars_coco_val_panoptic"
+
     return meta
 
 
@@ -130,7 +122,7 @@ def load_lars_coco_panoptic_json(root, json_file, image_dir, gt_dir, semseg_dir,
                 "pan_seg_file_name": pan_seg_file,
                 "sem_seg_file_name": sem_seg_file,
                 "segments_info": segments_info,
-                "meta": meta,
+                "meta": {"dataname": meta["dataname"]},  # Required by model
             }
         )
 
@@ -184,5 +176,48 @@ def register_all_lars_coco_panoptic_annos_sem_seg(root):
         )
 
 
+def load_lars_coco_semantic_only(image_dir, sem_seg_dir, meta):
+    """Load semantic segmentation dataset with required meta key"""
+    # Use built-in loader and add meta key
+    dataset_dicts = load_sem_seg(sem_seg_dir, image_dir, gt_ext="png", image_ext="jpg")
+    
+    # Add required meta key to each item
+    for item in dataset_dicts:
+        item["meta"] = {"dataname": meta["dataname"]}
+    
+    return dataset_dicts
+
+
+# Also register semantic-only datasets for pure semantic evaluation
+def register_lars_coco_semantic_only():
+    """Register LARS COCO for semantic segmentation evaluation only"""
+    root = Path(os.getenv("DETECTRON2_DATASETS", "datasets")) / "lars_coco"
+    meta = get_metadata()
+    
+    for split in ["train", "val"]:
+        image_dir = os.path.join(root, f"images/{split}")
+        sem_seg_dir = os.path.join(root, f"panoptic_semseg_{split}")
+        dataset_name = f"lars_coco_{split}_sem_seg"
+        
+        # Update metadata dataname for this specific dataset
+        split_meta = meta.copy()
+        split_meta["dataname"] = dataset_name
+        
+        # Register semantic segmentation dataset with our custom loader
+        DatasetCatalog.register(
+            dataset_name,
+            lambda x=image_dir, y=sem_seg_dir, m=split_meta: load_lars_coco_semantic_only(x, y, m),
+        )
+        MetadataCatalog.get(dataset_name).set(
+            image_root=image_dir,
+            sem_seg_root=sem_seg_dir,
+            evaluator_type="sem_seg",
+            ignore_label=255,
+            dataset_name=dataset_name,
+            **split_meta,
+        )
+
+
 _root = Path(os.getenv("DETECTRON2_DATASETS", "datasets")) / "lars_coco"
-register_all_lars_coco_panoptic_annos_sem_seg(_root) 
+register_all_lars_coco_panoptic_annos_sem_seg(_root)
+register_lars_coco_semantic_only() 

@@ -19,7 +19,7 @@ INPUT:
   DATASET_MAPPER_NAME: "mask_former_semantic"  # This enables detailed per-class metrics
 
 DATASETS:
-  TRAIN: ("lars_coco_train_panoptic",)  # Not used for eval-only
-  TEST: ("lars_coco_val_panoptic",)     # Your lars_coco validation set
+  TRAIN: ("lars_coco_train_sem_seg",)   # Not used for eval-only
+  TEST: ("lars_coco_val_sem_seg",)      # Your lars_coco semantic validation set
 
 OUTPUT_DIR: ./output/semantic/lars_coco_evaluation 
