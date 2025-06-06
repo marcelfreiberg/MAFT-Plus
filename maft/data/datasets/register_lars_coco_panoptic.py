@@ -25,12 +25,12 @@ LARS_COCO_CATEGORIES = [
 _PREDEFINED_SPLITS_LARS_COCO_PANOPTIC = {
     "lars_coco_train_panoptic": (
         "panoptic_train",
-        "annotations/panoptic_train.json",  
+        "annotations/panoptic_train.json",
         "panoptic_semseg_train",
     ),
     "lars_coco_val_panoptic": (
         "panoptic_val",
-        "annotations/panoptic_val.json",  
+        "annotations/panoptic_val.json",
         "panoptic_semseg_val",
     ),
 }
@@ -38,64 +38,64 @@ _PREDEFINED_SPLITS_LARS_COCO_PANOPTIC = {
 
 def get_metadata():
     meta = {}
-    # The following metadata maps contiguous id from [0, #thing categories +
-    # #stuff categories) to their names and colors. We have to replica of the
-    # same name and color under "thing_*" and "stuff_*" because the current
-    # visualization function in D2 handles thing and class classes differently
-    # due to some heuristic used in Panoptic FPN. We keep the same naming to
-    # enable reusing existing visualization functions.
+    # Separate out thing / stuff names and colors
     thing_classes = [k["name"] for k in LARS_COCO_CATEGORIES if k["isthing"] == 1]
     thing_colors = [k["color"] for k in LARS_COCO_CATEGORIES if k["isthing"] == 1]
-    stuff_classes = [k["name"] for k in LARS_COCO_CATEGORIES]
-    stuff_colors = [k["color"] for k in LARS_COCO_CATEGORIES]
-    
-    # All classes are also semantic segmentation classes
-    sem_stuff_classes = [k["name"] for k in LARS_COCO_CATEGORIES]
+    stuff_classes = [k["name"] for k in LARS_COCO_CATEGORIES if k["isthing"] == 0]
+    stuff_colors = [k["color"] for k in LARS_COCO_CATEGORIES if k["isthing"] == 0]
+
+    # Build mapping from original dataset ID → contiguous ID
+    thing_dataset_id_to_contiguous_id = {}
+    stuff_dataset_id_to_contiguous_id = {}
+    contiguous_id_to_class_name = [None] * len(LARS_COCO_CATEGORIES)
+
+    # Assign thing IDs 0..7, stuff IDs 8..10
+    thing_contiguous_id = 0
+    stuff_contiguous_id = 8
+
+    for cat in LARS_COCO_CATEGORIES:
+        if cat["isthing"] == 1:
+            thing_dataset_id_to_contiguous_id[cat["id"]] = thing_contiguous_id
+            contiguous_id_to_class_name[thing_contiguous_id] = cat["name"]
+            thing_contiguous_id += 1
+        else:
+            stuff_dataset_id_to_contiguous_id[cat["id"]] = stuff_contiguous_id
+            contiguous_id_to_class_name[stuff_contiguous_id] = cat["name"]
+            stuff_contiguous_id += 1
+
+    # For FCCLIP / text embeddings, we use the full contiguous_id_to_class_name
+    sem_stuff_classes = contiguous_id_to_class_name
 
     meta["thing_classes"] = thing_classes
     meta["thing_colors"] = thing_colors
-    meta["stuff_classes"] = stuff_classes
+    # NOTE: We store ALL classes under "stuff_classes" so the model's text encoder
+    # sees the full ordered list [0..10].
+    meta["stuff_classes"] = sem_stuff_classes
     meta["stuff_colors"] = stuff_colors
     meta["sem_stuff_classes"] = sem_stuff_classes
-
-    # Convert category id for training:
-    #   category id: like semantic segmentation, it is the class id for each
-    #   pixel. Since there are some classes not used in evaluation, the category
-    #   id is not always contiguous and thus we have two set of category ids:
-    #       - original category id: category id in the original dataset, mainly
-    #           used for evaluation.
-    #       - contiguous category id: [0, #classes), in order to train the linear
-    #           softmax classifier.
-    thing_dataset_id_to_contiguous_id = {}
-    stuff_dataset_id_to_contiguous_id = {}
-    contiguous_id_to_class_name = []
-
-    # Map non-continuous lars_coco IDs to continuous IDs [0, 10]
-    for i, cat in enumerate(LARS_COCO_CATEGORIES):
-        if cat["isthing"]:
-            thing_dataset_id_to_contiguous_id[cat["id"]] = i
-        
-        # For semantic segmentation evaluation, map all categories
-        stuff_dataset_id_to_contiguous_id[cat["id"]] = i
-        contiguous_id_to_class_name.append(cat["name"]) 
-
     meta["thing_dataset_id_to_contiguous_id"] = thing_dataset_id_to_contiguous_id
-    meta["stuff_dataset_id_to_contiguous_id"] = stuff_dataset_id_to_contiguous_id
+
+    # *** FIX: For semantic evaluation, we need a complete mapping of all contiguous IDs to dataset IDs ***
+    # Include both thing and stuff classes in the stuff_dataset_id_to_contiguous_id for semantic evaluation
+    complete_dataset_id_to_contiguous_id = {}
+    complete_dataset_id_to_contiguous_id.update(thing_dataset_id_to_contiguous_id)
+    complete_dataset_id_to_contiguous_id.update(stuff_dataset_id_to_contiguous_id)
+    meta["stuff_dataset_id_to_contiguous_id"] = complete_dataset_id_to_contiguous_id
+
     meta["contiguous_id_to_class_name"] = contiguous_id_to_class_name
     meta["dataname"] = "lars_coco_val_panoptic"
-
     return meta
 
 
 def load_lars_coco_panoptic_json(root, json_file, image_dir, gt_dir, semseg_dir, meta):
     """
     Args:
-        image_dir (str): path to the raw dataset. e.g., "~/lars_coco/images/train".
-        gt_dir (str): path to the raw annotations. e.g., "~/lars_coco/panoptic_train".
-        json_file (str): path to the json file. e.g., "~/lars_coco/annotations/panoptic_train.json".
+        image_dir (str): path to "~/<root>/images/train" or "…/images/val"
+        gt_dir (str): path to "~/<root>/<panoptic_root>"
+        json_file (str): path to "~/<root>/annotations/panoptic_*.json"
+        semseg_dir (str): path to "~/<root>/<panoptic_semseg_*>"
     Returns:
-        list[dict]: a list of dicts in Detectron2 standard format. (See
-        `Using Custom Datasets </tutorials/datasets.html>`_ )
+        list[dict]: Detectron2-format dicts
     """
 
     def _convert_category_id(segment_info, meta):
@@ -117,36 +117,39 @@ def load_lars_coco_panoptic_json(root, json_file, image_dir, gt_dir, semseg_dir,
     ret = []
     for ann in json_info["annotations"]:
         image_id = int(ann["image_id"])
-        # Lars COCO uses .jpg extension
+        # images end in .jpg
         image_file = os.path.join(image_dir, os.path.splitext(ann["file_name"])[0] + ".jpg")
-        label_file = os.path.join(gt_dir, ann["file_name"])
-        sem_label_file = os.path.join(semseg_dir, ann["file_name"])
-        
+        pan_seg_file = os.path.join(gt_dir, ann["file_name"])
+        sem_seg_file = os.path.join(semseg_dir, ann["file_name"])
+
         segments_info = [_convert_category_id(x, meta) for x in ann["segments_info"]]
         ret.append(
             {
                 "file_name": image_file,
                 "image_id": image_id,
-                "pan_seg_file_name": label_file,
-                "sem_seg_file_name": sem_label_file,
+                "pan_seg_file_name": pan_seg_file,
+                "sem_seg_file_name": sem_seg_file,
                 "segments_info": segments_info,
                 "meta": meta,
             }
         )
+
     assert len(ret), f"No images found in {image_dir}!"
-    assert PathManager.isfile(ret[0]["file_name"]), ret[0]["file_name"]
-    assert PathManager.isfile(ret[0]["pan_seg_file_name"]), ret[0]["pan_seg_file_name"]
-    assert PathManager.isfile(ret[0]["sem_seg_file_name"]), ret[0]["sem_seg_file_name"]
+    first = ret[0]
+    assert PathManager.isfile(first["file_name"]), first["file_name"]
+    assert PathManager.isfile(first["pan_seg_file_name"]), first["pan_seg_file_name"]
+    assert PathManager.isfile(first["sem_seg_file_name"]), first["sem_seg_file_name"]
     return ret
 
 
 def register_lars_coco_panoptic_annos_sem_seg(
     root, name, metadata, image_root, panoptic_root, panoptic_json, sem_seg_root
 ):
-    # Register the dataset
     DatasetCatalog.register(
         name,
-        lambda: load_lars_coco_panoptic_json(root, panoptic_json, image_root, panoptic_root, sem_seg_root, metadata),
+        lambda: load_lars_coco_panoptic_json(
+            root, panoptic_json, image_root, panoptic_root, sem_seg_root, metadata
+        ),
     )
     MetadataCatalog.get(name).set(
         sem_seg_root=sem_seg_root,
@@ -162,15 +165,13 @@ def register_lars_coco_panoptic_annos_sem_seg(
 
 
 def register_all_lars_coco_panoptic_annos_sem_seg(root):
-    for (
-        prefix,
-        (panoptic_root, panoptic_json, semantic_root),
-    ) in _PREDEFINED_SPLITS_LARS_COCO_PANOPTIC.items():
-        
-        if 'train' in prefix:
+    for prefix, (panoptic_root, panoptic_json, semantic_root) in _PREDEFINED_SPLITS_LARS_COCO_PANOPTIC.items():
+        if "train" in prefix:
             image_root = os.path.join(root, "images/train")
-        elif 'val' in prefix:
+        elif "val" in prefix:
             image_root = os.path.join(root, "images/val")
+        else:
+            raise ValueError(f"Unknown split prefix: {prefix}")
 
         register_lars_coco_panoptic_annos_sem_seg(
             root,
