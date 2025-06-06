@@ -25,4 +25,4 @@ DATASETS:
   TRAIN: ("lars_coco_train_panoptic",) 
   TEST: ("lars_coco_val_panoptic",) 
 
-OUTPUT_DIR: ./out/panoptic/lars_coco_evaluation 
+OUTPUT_DIR: ./output/panoptic/lars_coco_evaluation 

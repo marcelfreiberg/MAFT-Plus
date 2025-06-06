@@ -22,4 +22,4 @@ DATASETS:
   TRAIN: ("lars_coco_train_panoptic",)  # Not used for eval-only
   TEST: ("lars_coco_val_panoptic",)     # Your lars_coco validation set
 
-OUTPUT_DIR: ./out/semantic/lars_coco_evaluation 
+OUTPUT_DIR: ./output/semantic/lars_coco_evaluation 
