@@ -50,6 +50,7 @@ from detectron2.evaluation import (
 from detectron2.projects.deeplab import add_deeplab_config, build_lr_scheduler
 from detectron2.solver.build import maybe_add_gradient_clipping
 from detectron2.utils.logger import setup_logger
+from detectron2.utils.events import JSONWriter, TensorboardXWriter
 
 from maft import (
     COCOInstanceNewBaselineDatasetMapper,
@@ -64,12 +65,52 @@ from maft import (
     add_maskformer2_config,
     add_fcclip_config
 )
+from maft.utils import WandbWriter, CommonMetricPrinter, WriterStack
+
+
+def build_writers(cfg, max_iter, wandb_enabled=False, wandb_resume=False):
+    """
+    Build a list of writers to be used for logging.
+    It includes a CommonMetricPrinter, JSONWriter, TensorboardXWriter, and optionally WandbWriter.
+    """
+    writers = [
+        CommonMetricPrinter(max_iter, run_name=getattr(cfg, 'RUN_NAME', 'maft-plus')),
+        JSONWriter(os.path.join(cfg.OUTPUT_DIR, "metrics.json")),
+        TensorboardXWriter(cfg.OUTPUT_DIR),
+    ]
+    
+    # Add WandbWriter if enabled
+    if wandb_enabled:
+        project = "MAFT-Plus"
+        run_name = getattr(cfg, 'RUN_NAME', f'maft-plus-{cfg.MODEL.META_ARCHITECTURE}')
+        writers.append(
+            WandbWriter(
+                max_iter=max_iter,
+                run_name=run_name,
+                output_dir=cfg.OUTPUT_DIR,
+                project=project,
+                config=cfg,
+                resume=wandb_resume,
+            )
+        )
+    
+    return writers
 
 
 class Trainer(DefaultTrainer):
     """
-    Extension of the Trainer class adapted to FCCLIP.
+    Extension of the Trainer class adapted to FCCLIP with Wandb support.
     """
+    
+    def build_writers(self):
+        """
+        Build a list of writers to be used for logging.
+        This is called by the default trainer to setup logging.
+        """
+        # Get wandb settings from config
+        wandb_enabled = getattr(self.cfg, '_WANDB_ENABLED', False)
+        wandb_resume = getattr(self.cfg, '_WANDB_RESUME', False)
+        return build_writers(self.cfg, self.cfg.SOLVER.MAX_ITER, wandb_enabled, wandb_resume)
 
     @classmethod
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
@@ -252,6 +293,14 @@ def setup(args):
     add_deeplab_config(cfg)
     add_maskformer2_config(cfg)
     add_fcclip_config(cfg)
+    
+    # Store wandb settings as simple boolean attributes (YACS compatible)
+    cfg._WANDB_ENABLED = args.wandb
+    cfg._WANDB_RESUME = args.resume
+    
+    # Set run name based on config file
+    cfg.RUN_NAME = f"maft-plus-{os.path.basename(args.config_file).split('.')[0]}"
+    
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
     cfg.merge_from_list(['SEED', 123])
@@ -284,7 +333,11 @@ def main(args):
 
 
 if __name__ == "__main__":
-    args = default_argument_parser().parse_args()
+    parser = default_argument_parser()
+    # Add wandb-specific arguments
+    parser.add_argument("--wandb", action="store_true", help="Enable Wandb logging")
+    
+    args = parser.parse_args()
     print("Command Line Args:", args)
     launch(
         main,
