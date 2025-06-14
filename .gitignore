@@ -13,3 +13,4 @@ maft/modeling/pixel_decoder/ops/MultiScaleDeformableAttention.egg-info
 maft/modeling/pixel_decoder/ops/build
 
 output/
+wandb/
