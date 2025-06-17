@@ -298,12 +298,24 @@ def setup(args):
     cfg._WANDB_ENABLED = args.wandb
     cfg._WANDB_RESUME = args.resume
     
-    # Set run name based on config file
-    cfg.RUN_NAME = f"maft-plus-{os.path.basename(args.config_file).split('.')[0]}"
+    # Store tag for run identification
+    cfg._TAG = getattr(args, 'tag', None)
+    
+    # Set run name based on config file and optionally tag
+    base_name = f"maft-plus-{os.path.basename(args.config_file).split('.')[0]}"
+    if cfg._TAG:
+        cfg.RUN_NAME = f"{base_name}-{cfg._TAG}"
+    else:
+        cfg.RUN_NAME = base_name
     
     cfg.merge_from_file(args.config_file)
     cfg.merge_from_list(args.opts)
     cfg.merge_from_list(['SEED', 123])
+    
+    # Modify OUTPUT_DIR to include tag BEFORE freezing config
+    if cfg._TAG:
+        cfg.OUTPUT_DIR = os.path.join(cfg.OUTPUT_DIR, cfg._TAG)
+    
     cfg.freeze()
     default_setup(cfg, args)
     # Setup logger for "maft-plus" module
@@ -336,6 +348,8 @@ if __name__ == "__main__":
     parser = default_argument_parser()
     # Add wandb-specific arguments
     parser.add_argument("--wandb", action="store_true", help="Enable Wandb logging")
+    # Add tag argument for organizing runs
+    parser.add_argument("--tag", type=str, default=None, help="Tag to identify this run")
     
     args = parser.parse_args()
     print("Command Line Args:", args)
