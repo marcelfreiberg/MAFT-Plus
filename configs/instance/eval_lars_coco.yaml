@@ -1,4 +1,4 @@
-# python train_net.py --config-file configs/panoptic/eval_lars_coco.yaml --num-gpus 1 --eval-only
+# python train_net.py --config-file configs/instance/eval_lars_coco.yaml --num-gpus 1 --eval-only
 
 _BASE_: ../maskformer2_R50_bs16_50ep.yaml
 MODEL:
@@ -16,14 +16,14 @@ MODEL:
   MASK_FORMER:
     TEST:
       SEMANTIC_ON: True
-      INSTANCE_ON: False
-      PANOPTIC_ON: True
+      INSTANCE_ON: True
+      PANOPTIC_ON: False
   rc_weights: 0.1
 
 INPUT:
-  DATASET_MAPPER_NAME: "coco_panoptic_lsj" # mask_former_semantic coco_panoptic_lsj
+  DATASET_MAPPER_NAME: "coco_instance_lsj"
 
 DATASETS:
-  TEST: ("lars_coco_val_panoptic",) 
+  TEST: ("lars_coco_val",) 
 
-OUTPUT_DIR: ./output/panoptic
+OUTPUT_DIR: ./output/instance 

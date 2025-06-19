@@ -4,23 +4,13 @@ from pathlib import Path
 
 from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.data.datasets import load_sem_seg
+from . import openseg_classes
+
 from detectron2.utils.file_io import PathManager
 
 
-# Lars COCO specific categories - these IDs are not continuous
-LARS_COCO_CATEGORIES = [
-    {"id": 1, "name": "Static Obstacle", "isthing": 0, "color": [220, 20, 60]},
-    {"id": 3, "name": "Water", "isthing": 0, "color": [119, 11, 32]},
-    {"id": 5, "name": "Sky", "isthing": 0, "color": [0, 0, 142]},
-    {"id": 11, "name": "Boat/ship", "isthing": 1, "color": [0, 0, 230]},
-    {"id": 12, "name": "Row boats", "isthing": 1, "color": [106, 0, 228]},
-    {"id": 13, "name": "Paddle board", "isthing": 1, "color": [0, 60, 100]},
-    {"id": 14, "name": "Buoy", "isthing": 1, "color": [0, 80, 100]},
-    {"id": 15, "name": "Swimmer", "isthing": 1, "color": [0, 0, 70]},
-    {"id": 16, "name": "Animal", "isthing": 1, "color": [0, 0, 192]},
-    {"id": 17, "name": "Float", "isthing": 1, "color": [250, 170, 30]},
-    {"id": 19, "name": "Other", "isthing": 1, "color": [100, 170, 30]},
-]
+# Use the prompt-engineered categories as requested
+LARS_COCO_CATEGORIES = openseg_classes.get_lars_coco_categories_with_prompt_eng()
 
 _PREDEFINED_SPLITS_LARS_COCO_PANOPTIC = {
     "lars_coco_train_panoptic": (
@@ -165,6 +155,10 @@ def register_all_lars_coco_panoptic_annos_sem_seg(root):
         else:
             raise ValueError(f"Unknown split prefix: {prefix}")
 
+        # Update metadata dataname for this specific dataset
+        metadata = get_metadata()
+        metadata["dataname"] = prefix
+
         # Register both base dataset and _with_sem_seg version
         for name_suffix in ["", "_with_sem_seg"]:
             dataset_name = prefix + name_suffix
@@ -172,56 +166,12 @@ def register_all_lars_coco_panoptic_annos_sem_seg(root):
                 register_lars_coco_panoptic_annos_sem_seg(
                     root,
                     dataset_name,
-                    get_metadata(),
+                    metadata,
                     image_root,
                     os.path.join(root, panoptic_root),
                     os.path.join(root, panoptic_json),
                     os.path.join(root, semantic_root),
                 )
 
-
-def load_lars_coco_semantic_only(image_dir, sem_seg_dir, meta):
-    """Load semantic segmentation dataset with required meta key"""
-    # Use built-in loader and add meta key
-    dataset_dicts = load_sem_seg(sem_seg_dir, image_dir, gt_ext="png", image_ext="jpg")
-    
-    # Add required meta key to each item
-    for item in dataset_dicts:
-        item["meta"] = {"dataname": meta["dataname"]}
-    
-    return dataset_dicts
-
-
-# Also register semantic-only datasets for pure semantic evaluation
-def register_lars_coco_semantic_only():
-    """Register LARS COCO for semantic segmentation evaluation only"""
-    root = Path(os.getenv("DETECTRON2_DATASETS", "datasets")) / "lars_coco"
-    meta = get_metadata()
-    
-    for split in ["train", "val"]:
-        image_dir = os.path.join(root, f"images/{split}")
-        sem_seg_dir = os.path.join(root, f"panoptic_semseg_{split}_full")  # Use full semantic masks
-        dataset_name = f"lars_coco_{split}_sem_seg"
-        
-        # Update metadata dataname for this specific dataset
-        split_meta = meta.copy()
-        split_meta["dataname"] = dataset_name
-        
-        # Register semantic segmentation dataset with our custom loader
-        DatasetCatalog.register(
-            dataset_name,
-            lambda x=image_dir, y=sem_seg_dir, m=split_meta: load_lars_coco_semantic_only(x, y, m),
-        )
-        MetadataCatalog.get(dataset_name).set(
-            image_root=image_dir,
-            sem_seg_root=sem_seg_dir,
-            evaluator_type="sem_seg",
-            ignore_label=255,
-            dataset_name=dataset_name,
-            **split_meta,
-        )
-
-
 _root = Path(os.getenv("DETECTRON2_DATASETS", "datasets")) / "lars_coco"
 register_all_lars_coco_panoptic_annos_sem_seg(_root)
-register_lars_coco_semantic_only() 

@@ -5,7 +5,6 @@ MODEL:
   WEIGHTS: /data/mfreiberg/weights/maftplus/maftp_l_pano.pth
   META_ARCHITECTURE: "MAFT_Plus"
   SEM_SEG_HEAD:
-    NAME: "FCCLIPHead"
     NUM_CLASSES: 11
   FC_CLIP:
     CLIP_MODEL_NAME: "convnext_large_d_320"  
@@ -14,10 +13,7 @@ MODEL:
     GEOMETRIC_ENSEMBLE_ALPHA: -1.
     GEOMETRIC_ENSEMBLE_BETA: -1.
 
-INPUT:
-  DATASET_MAPPER_NAME: "mask_former_semantic"  # This enables detailed per-class metrics
-
 DATASETS:
   TEST: ("lars_coco_val_sem_seg",)
 
-OUTPUT_DIR: ./output/semantic/lars_coco_evaluation 
+OUTPUT_DIR: ./output/semantic
