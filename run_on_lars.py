@@ -20,52 +20,26 @@ from detectron2.data.detection_utils import read_image
 from detectron2.utils.visualizer import ColorMode, random_color
 from detectron2.data import MetadataCatalog
 from detectron2.projects.deeplab import add_deeplab_config
+from detectron2.utils.logger import setup_logger
 
 from maft import add_maskformer2_config, add_fcclip_config
 from demo.predictor import VisualizationDemo, DefaultPredictor, OpenVocabVisualizer
+from maft.data.datasets.openseg_classes import get_lars_coco_categories_with_prompt_eng
 
+setup_logger(name="fvcore")
+logger = setup_logger()
 
 # In[2]:
 
-LARS_STUFF_CLASSES = [
-    ["Static Obstacle"],
-    ["Water"],
-    ["Sky"],
-]
+# Use the prompt-engineered categories from the text file
+LARS_CATEGORIES_PROMPT_ENG = get_lars_coco_categories_with_prompt_eng()
 
-LARS_STUFF_CLASSES_EXTENDED = [
-    ["Static Obstacle", "Fixed Object", "Immovable Object", "Barrier", "Structure", "Terrain", "Ground", "Land", "Forest", "Trees", "Vegetation", "Plants", "Grass", "Bush", "Foliage", "Beach", "Shore", "Coast", "Sand", "Rocks", "Cliff", "Stone", "Boulder", "Background", "Environment", "Surroundings", "Landscape", "Dock", "Pier", "Jetty", "Building", "Construction"],
-    ["Water", "Sea", "Ocean", "Lake", "River", "Pond", "Fluid", "Aquatic surface", "Waterway", "Stream", "Waves", "Liquid"],
-    ["Sky", "Clouds", "Atmosphere", "Heavens", "Air", "Horizon", "Celestial", "Firmament"],
-]
+# Separate into thing and stuff classes
+LARS_THING_CLASSES_PROMPT_ENG = [cat["name"] for cat in LARS_CATEGORIES_PROMPT_ENG if cat["isthing"] == 1]
+LARS_STUFF_CLASSES_PROMPT_ENG = [cat["name"] for cat in LARS_CATEGORIES_PROMPT_ENG if cat["isthing"] == 0]
 
-LARS_STUFF_COLORS = [
-    [247, 195, 37],
-    [41, 167, 224],
-    [90, 75, 164],
-]
-
-LARS_THING_CLASSES = [
-    ["Boat/ship", "Boat with person"],
-    ["Row boats"],
-    ["Paddle board"],
-    ["Buoy"],
-    ["Swimmer"],
-    ["Animal"],
-    ["Float"],
-    ["Other"],
-]
-
-LARS_THING_COLORS = [
-    [255, 87, 51],    # Boat/ship - bright orange-red
-    [50, 205, 50],    # Row boats - lime green  
-    [255, 0, 255],    # Paddle board - magenta
-    [255, 215, 0],    # Buoy - gold
-    [0, 128, 128],    # Swimmer - teal
-    [139, 69, 19],    # Animal - saddle brown
-    [220, 20, 60],    # Float - crimson
-    [169, 169, 169],  # Other - dark gray
-]
+LARS_THING_COLORS = [cat["color"] for cat in LARS_CATEGORIES_PROMPT_ENG if cat["isthing"] == 1]
+LARS_STUFF_COLORS = [cat["color"] for cat in LARS_CATEGORIES_PROMPT_ENG if cat["isthing"] == 0]
 
 ODISE_TO_LARS_MAPPING = {
     0: 11,
@@ -81,39 +55,25 @@ ODISE_TO_LARS_MAPPING = {
     10: 5,
 }
 
-def build_demo_classes_and_metadata(vocab, label_list):
-    extra_classes = []
+VAL_IMAGES_PATH = "/data/mfreiberg/datasets/lars/val/images"
+TEST_IMAGES_PATH = "/data/mfreiberg/datasets/lars/test/images"
+VAL_OUTPUT_PATH = "output/images/val/P3"
+TEST_OUTPUT_PATH = "output/images/test"
 
-    if vocab:
-        for words in vocab.split(";"):
-            extra_classes.append([word.strip() for word in words.split(",")])
-    extra_colors = [random_color(rgb=True, maximum=1) for _ in range(len(extra_classes))]
-
-    demo_thing_classes = extra_classes
-    demo_stuff_classes = []
-    demo_thing_colors = extra_colors
-    demo_stuff_colors = []
-
-    if "LARS" in label_list:
-        demo_thing_classes += LARS_THING_CLASSES
-        demo_stuff_classes += LARS_STUFF_CLASSES
-        demo_thing_colors += LARS_THING_COLORS
-        demo_stuff_colors += LARS_STUFF_COLORS
-    if "LARS_EXTENDED" in label_list:
-        demo_thing_classes += LARS_THING_CLASSES
-        demo_stuff_classes += LARS_STUFF_CLASSES_EXTENDED
-        demo_thing_colors += LARS_THING_COLORS
-        demo_stuff_colors += LARS_STUFF_COLORS
-
+def build_demo_classes_and_metadata():
+    """Build metadata for LARS dataset with prompt engineering"""
+    
+    # Create metadata with prompt-engineered class names (comma-separated synonyms)
     MetadataCatalog.pop("fcclip_demo_metadata", None)
     demo_metadata = MetadataCatalog.get("fcclip_demo_metadata")
-    demo_metadata.thing_classes = [c[0] for c in demo_thing_classes]
-    demo_metadata.stuff_classes = [
-        *demo_metadata.thing_classes,
-        *[c[0] for c in demo_stuff_classes],
-    ]
-    demo_metadata.thing_colors = demo_thing_colors
-    demo_metadata.stuff_colors = demo_thing_colors + demo_stuff_colors
+    
+    # Set the classes with comma-separated synonyms from the text file
+    demo_metadata.thing_classes = LARS_THING_CLASSES_PROMPT_ENG
+    demo_metadata.stuff_classes = LARS_THING_CLASSES_PROMPT_ENG + LARS_STUFF_CLASSES_PROMPT_ENG
+    
+    demo_metadata.thing_colors = LARS_THING_COLORS
+    demo_metadata.stuff_colors = LARS_THING_COLORS + LARS_STUFF_COLORS
+    
     demo_metadata.stuff_dataset_id_to_contiguous_id = {
         idx: idx for idx in range(len(demo_metadata.stuff_classes))
     }
@@ -121,9 +81,7 @@ def build_demo_classes_and_metadata(vocab, label_list):
         idx: idx for idx in range(len(demo_metadata.thing_classes))
     }
 
-    demo_classes = demo_thing_classes + demo_stuff_classes
-
-    return demo_classes, demo_metadata
+    return demo_metadata
 
 
 # In[3]:
@@ -174,7 +132,7 @@ cfg = get_cfg()
 add_deeplab_config(cfg)
 add_maskformer2_config(cfg)
 add_fcclip_config(cfg)
-cfg.merge_from_file("configs/panoptic/eval.yaml")
+cfg.merge_from_file("configs/panoptic/eval_lars_coco.yaml")
 cfg.merge_from_list(['MODEL.WEIGHTS', "/data/mfreiberg/weights/maftplus/maftp_l_pano.pth"])
 cfg.merge_from_list(['MODEL.META_ARCHITECTURE', "MAFT_Plus_DEMO"])
 cfg.freeze()
@@ -185,7 +143,8 @@ cfg.freeze()
 
 predictor = DefaultPredictor(cfg)
 
-demo_classes, demo_metadata = build_demo_classes_and_metadata("", ["LARS"]) # Class config. Options: "LARS", "LARS_EXTENDED", ""
+demo_metadata = build_demo_classes_and_metadata()
+
 predictor.set_metadata(demo_metadata)
 
 # In[9]:
@@ -233,11 +192,6 @@ def inference(img_path, output_dir):
 # In[10]:
 
 
-inference("/data/mfreiberg/datasets/lars/val/images", "/data/mfreiberg/predictions/maftplus/val")
-
-
-# In[11]:
-
-
-inference("/data/mfreiberg/datasets/lars/test/images", "/data/mfreiberg/predictions/maftplus/test")
+inference(VAL_IMAGES_PATH, VAL_OUTPUT_PATH)
+# inference(TEST_IMAGES_PATH, TEST_OUTPUT_PATH)
 
