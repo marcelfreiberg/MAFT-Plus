@@ -1,7 +1,7 @@
 program: sweep_train.py
 method: bayes
 metric:
-  name: lars_coco_val_panoptic/panoptic_seg/PQ
+  name: panoptic_seg/PQ
   goal: maximize
 
 parameters:
@@ -34,7 +34,7 @@ parameters:
 
   # ─────── Training length (fixed) ───────
   max_iter:
-    value: 6000
+    value: 10000
 
   # ─────── Backbone multiplier ───────
   backbone_multiplier:
